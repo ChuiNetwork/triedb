@@ -1,0 +1,81 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, edited, reopened, ready_for_review]
+    branches:
+      - master
+
+name: Continuous integration
+
+jobs:
+  ci_checks:
+    runs-on: ubuntu-latest
+    container: rust:1.65
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Additional Debian packages
+        run: |
+          apt-get update
+          apt-get install clang -y
+      - uses: actions/checkout@v2
+      - name: Installing fmt and clippy
+        run: |
+          rustup component add rustfmt
+          rustup component add clippy
+      - name: Run cargo update
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+      - name: Run rustfmt check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Try to use cached dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-v1-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --tests -- -D warnings
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test 
+
+      - name: Run building benches
+        uses: actions-rs/cargo@v1
+        with:
+          command: bench
+          args: --no-run
+
+  nightly_ci_checks:
+    runs-on: ubuntu-latest
+    container: rustlang/rust:nightly-bullseye-slim
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Additional Debian packages
+        run: |
+          apt-get update
+          apt-get install clang -y
+      - uses: actions/checkout@v2
+
+      - name: Run install cargo-fuzz
+        uses: baptiste0928/cargo-install@v1
+        with:
+          crate: cargo-fuzz
+          version: "0.11.1"
+
+      - name: Run build of cargo-fuzz
+        run: cargo fuzz build
+        working-directory: ./fuzz
